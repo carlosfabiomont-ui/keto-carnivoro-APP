@@ -1,0 +1,7 @@
+{
+  "name": "Keto Carnivora AI",
+  "description": "Snap a photo of your meal and get a complete nutritional analysis based on your chosen diet: Carnivore or Ketogenic. The app identifies foods, estimates macros, and evaluates compatibility, offering practical recommendations to help you stay on track.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

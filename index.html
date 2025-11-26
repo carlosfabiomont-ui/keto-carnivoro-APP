@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🥩</text></svg>" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    
+    <!-- PWA Settings -->
+    <meta name="theme-color" content="#0a0a0a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="KetoAI" />
+    <link rel="manifest" href="/manifest.json" />
+
+    <title>Keto Carnivora AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'brand-primary': '#D9A40E', // Gold
+              'brand-secondary': '#AF8C1C', // Darker Gold
+              'brand-accent': '#DC2626', // Red
+              'brand-dark': '#0a0a0a',
+              'brand-light': '#EAEAEA',
+              'brand-gray': '#262626',
+              'brand-gray-light': '#A3A3A3',
+              'status-green': '#16A34A',
+              'status-yellow': '#F59E0B',
+              'status-red': '#DC2626',
+            },
+            animation: {
+                'fade-in': 'fadeIn 0.5s ease-in-out',
+            },
+            keyframes: {
+                fadeIn: {
+                    '0%': { opacity: 0, transform: 'translateY(10px)' },
+                    '100%': { opacity: 1, transform: 'translateY(0)' },
+                },
+            },
+          },
+        },
+      }
+    </script>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://esm.run/@google/genai",
+    "@supabase/supabase-js": "https://esm.run/@supabase/supabase-js"
+  }
+}
+</script>
+</head>
+  <body class="bg-brand-dark text-brand-light overscroll-none">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "name": "Keto Carnivora AI",
+  "short_name": "KetoAI",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1134/1134447.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1134/1134447.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
