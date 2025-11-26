@@ -1,24 +1,6 @@
 import { GoogleGenAI, Type } from '@google/genai';
+import { supabase } from '../lib/supabaseClient';
 import type { DietType, StrictnessLevel, AnalysisResult, ProteinType } from '../types';
-
-/**
- * ARQUITETURA SAAS (FUTURO):
- * 
- * Atualmente, este arquivo chama a API do Google diretamente do navegador (Client-Side).
- * Isso exige que a chave API esteja exposta ou inserida pelo usuário.
- * 
- * PARA MIGRAR PARA PRODUÇÃO (SUPABASE + STRIPE):
- * 
- * 1. Você criará uma 'Edge Function' no Supabase.
- * 2. Moverá a lógica de 'generatePrompt' e a chamada 'genAI.models.generateContent' para lá.
- * 3. Esta função 'analyzeMeal' abaixo deixará de usar 'GoogleGenAI' diretamente e passará a fazer:
- * 
- *    const { data, error } = await supabase.functions.invoke('analisar-refeicao', {
- *       body: { image: imageBase64, diet, strictness }
- *    })
- * 
- * Isso protege sua chave API e garante o controle de cotas de uso.
- */
 
 const DIET_CONFIG = {
   carnivore: {
@@ -65,28 +47,10 @@ export function setStoredApiKey(key: string) {
     ai = null; // Force re-initialization
 }
 
-function getGoogleGenAI() {
+function getGoogleGenAI(apiKey: string) {
     if (ai) {
         return ai;
     }
-
-    // Prioritize user-provided key, fallback to env var
-    let apiKey = getStoredApiKey();
-    
-    if (!apiKey) {
-        // Try getting from env, handle if process is undefined (browser check)
-        try {
-            apiKey = process.env.API_KEY;
-        } catch (e) {
-            // process is not defined in some browser environments
-        }
-    }
-
-    if (!apiKey) {
-        console.warn("Chave da API não encontrada.");
-        throw new Error("API_KEY_MISSING");
-    }
-    
     ai = new GoogleGenAI({ apiKey });
     return ai;
 }
@@ -202,50 +166,72 @@ export async function analyzeMeal(
   strictness: StrictnessLevel
 ): Promise<AnalysisResult> {
   try {
-    const genAI = getGoogleGenAI();
     const imageBase64 = await toBase64(imageFile);
-    const prompt = generatePrompt(diet, strictness);
     
-    const imagePart = {
-        inlineData: {
-            mimeType: imageFile.type,
-            data: imageBase64,
-        },
-    };
-    const textPart = { text: prompt };
+    // 1. TENTATIVA COM CHAVE LOCAL (Modo Dev / Visitante com chave)
+    const localKey = getStoredApiKey();
 
-    const response = await genAI.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: { parts: [textPart, imagePart] },
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: responseSchema,
-      },
-    });
+    if (localKey) {
+        console.log("Usando chave API local...");
+        const genAI = getGoogleGenAI(localKey);
+        const prompt = generatePrompt(diet, strictness);
+        
+        const imagePart = {
+            inlineData: {
+                mimeType: imageFile.type,
+                data: imageBase64,
+            },
+        };
+        const textPart = { text: prompt };
 
-    const resultText = response.text;
-    
-    if (!resultText) {
-      throw new Error("A API não retornou uma resposta de texto válida.");
+        const response = await genAI.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts: [textPart, imagePart] },
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: responseSchema,
+            },
+        });
+
+        const resultText = response.text;
+        if (!resultText) throw new Error("A API não retornou uma resposta válida.");
+        return JSON.parse(resultText) as AnalysisResult;
     }
-    
-    try {
-        const resultJson = JSON.parse(resultText);
-        return resultJson as AnalysisResult;
-    } catch (parseError) {
-        console.error("Falha ao analisar JSON da API. Resposta recebida:", resultText);
-        throw new Error("A resposta da IA não está no formato esperado (JSON inválido). Por favor, tente novamente com outra imagem ou aguarde um momento.");
+
+    // 2. TENTATIVA VIA SUPABASE EDGE FUNCTION (Modo SaaS)
+    if (supabase) {
+        console.log("Chamando Supabase Edge Function...");
+        
+        const { data, error } = await supabase.functions.invoke('analyze-meal', {
+            body: { 
+                image: imageBase64, 
+                diet, 
+                strictness 
+            }
+        });
+
+        if (error) {
+            console.error("Erro na Edge Function:", error);
+            throw new Error(`Erro no servidor: ${error.message}`);
+        }
+
+        // A Edge Function já deve retornar o JSON pronto ou texto
+        if (typeof data === 'object') return data as AnalysisResult;
+        return JSON.parse(data) as AnalysisResult;
     }
-    
+
+    // 3. SEM CHAVE E SEM SUPABASE
+    throw new Error("API_KEY_MISSING");
+
   } catch (error) {
-    console.error("Erro ao chamar a API do Google Gemini:", error);
+    console.error("Erro geral na análise:", error);
     if (error instanceof Error) {
          if (error.message.includes("API_KEY_MISSING")) {
             throw new Error("API_KEY_MISSING");
          }
-        throw new Error(`Falha ao analisar a refeição: ${error.message}`);
+        throw new Error(`${error.message}`);
     }
-    throw new Error("Ocorreu um erro desconhecido durante a análise da refeição.");
+    throw new Error("Ocorreu um erro desconhecido durante a análise.");
   }
 }
 
@@ -255,30 +241,30 @@ export async function generateMenuSuggestion(
     strictness: StrictnessLevel
 ): Promise<string> {
     try {
-        const genAI = getGoogleGenAI();
-        const prompt = generateMenuPrompt(protein, diet, strictness);
+        const localKey = getStoredApiKey();
 
-        const response = await genAI.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: prompt,
-        });
-
-        const resultText = response.text;
-
-        if (!resultText) {
-            throw new Error("A API não retornou uma resposta de texto válida.");
+        if (localKey) {
+            const genAI = getGoogleGenAI(localKey);
+            const prompt = generateMenuPrompt(protein, diet, strictness);
+            const response = await genAI.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: prompt,
+            });
+            return response.text || "Sem resposta.";
         }
 
-        return resultText.trim();
+        // TODO: Criar Edge Function para Menu se necessário. 
+        // Por enquanto, se não tiver chave, pede para configurar.
+        throw new Error("API_KEY_MISSING");
 
     } catch (error) {
-        console.error("Erro ao chamar a API do Google Gemini:", error);
+        console.error("Erro ao gerar menu:", error);
          if (error instanceof Error) {
              if (error.message.includes("API_KEY_MISSING")) {
                 throw new Error("API_KEY_MISSING");
              }
-            throw new Error(`Falha ao gerar sugestão de menu: ${error.message}`);
+            throw new Error(`Falha ao gerar sugestão: ${error.message}`);
         }
-        throw new Error("Ocorreu um erro desconhecido ao gerar a sugestão de menu.");
+        throw new Error("Erro desconhecido.");
     }
 }
