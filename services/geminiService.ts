@@ -168,17 +168,15 @@ const fileToBase64 = (file: File): Promise<string> => {
 };
 
 // Nova função ROBUSTA para redimensionar e comprimir imagem (Mobile-First)
-// Usa URL.createObjectURL para evitar estouro de memória com FileReader
-const resizeAndCompressImage = (file: File, maxWidth = 400, quality = 0.6): Promise<string> => {
+// Reduzida para 350px e qualidade 0.5 para garantir upload em redes instáveis (Payload < 50kb)
+const resizeAndCompressImage = (file: File, maxWidth = 350, quality = 0.5): Promise<string> => {
     return new Promise((resolve, reject) => {
-        // Cria um link direto para o arquivo na memória (muito mais eficiente que ler string)
         const objectUrl = URL.createObjectURL(file);
         const img = new Image();
         
         img.src = objectUrl;
 
         img.onload = () => {
-            // Limpa a memória do link assim que carregar
             URL.revokeObjectURL(objectUrl);
 
             try {
@@ -197,13 +195,9 @@ const resizeAndCompressImage = (file: File, maxWidth = 400, quality = 0.6): Prom
                 
                 const ctx = canvas.getContext('2d');
                 if (ctx) {
-                    // Fundo branco para caso de PNG transparente
                     ctx.fillStyle = '#FFFFFF';
                     ctx.fillRect(0, 0, width, height);
-                    
                     ctx.drawImage(img, 0, 0, width, height);
-                    
-                    // Comprime
                     const dataUrl = canvas.toDataURL('image/jpeg', quality);
                     resolve(dataUrl.split(',')[1]);
                 } else {
@@ -230,21 +224,19 @@ export async function analyzeMeal(
     let imageBase64: string;
 
     try {
-        // Tenta o método otimizado (resize)
+        // Tenta o método otimizado (resize super comprimido)
         imageBase64 = await resizeAndCompressImage(imageFile);
     } catch (resizeError) {
         console.warn("Falha na compressão automática, tentando fallback...", resizeError);
-        
-        // PLANO B: Se a compressão falhar, mas o arquivo for < 5MB, envia original
         const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
         if (imageFile.size < MAX_SIZE_BYTES) {
             imageBase64 = await fileToBase64(imageFile);
         } else {
-            throw new Error("A imagem é muito grande e falhou ao ser comprimida. Tente tirar um print da foto ou usar uma menor.");
+            throw new Error("A imagem é muito grande. Tente tirar um print da foto ou usar uma menor.");
         }
     }
     
-    // 1. TENTATIVA COM CHAVE LOCAL (Modo Dev / Visitante com chave)
+    // 1. TENTATIVA COM CHAVE LOCAL
     const localKey = getStoredApiKey();
 
     if (localKey) {
@@ -278,12 +270,8 @@ export async function analyzeMeal(
     if (supabase) {
         console.log("Chamando Supabase Edge Function...");
         
-        // Adiciona Timeout de 60 segundos para evitar loading infinito
-        const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("Timeout: O servidor demorou muito para responder.")), 60000)
-        );
-
-        const fetchPromise = supabase.functions.invoke('analyze-meal', {
+        // Chamada direta sem timeout manual para evitar cancelamento prematuro em redes lentas
+        const { data, error } = await supabase.functions.invoke('analyze-meal', {
             body: { 
                 image: imageBase64, 
                 diet, 
@@ -291,31 +279,27 @@ export async function analyzeMeal(
             }
         });
 
-        const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
-
         if (error) {
             console.error("Erro detalhado na Edge Function:", error);
             
-            // Tratamento de erros comuns
             const errorMessage = error.message || String(error);
 
             if (errorMessage.includes("Failed to send a request")) {
-                throw new Error("Erro de conexão. Verifique se a foto não é excessivamente pesada ou tente novamente.");
+                throw new Error("Erro de Conexão com o Servidor. O envio falhou. Verifique sua internet e tente novamente.");
             }
             
             if (errorMessage.includes("Function not found")) {
-                throw new Error("Erro de Configuração: O servidor de análise ainda não foi implantado corretamente (Função 'analyze-meal' não encontrada).");
+                throw new Error("Erro Crítico: A função do servidor 'analyze-meal' não foi encontrada. O deploy foi realizado?");
             }
 
+            // Repassa o erro real do servidor
             throw new Error(`Erro do Servidor: ${errorMessage}`);
         }
 
-        // A Edge Function já deve retornar o JSON pronto ou texto
         if (typeof data === 'object') return data as AnalysisResult;
         return JSON.parse(data) as AnalysisResult;
     }
 
-    // 3. SEM CHAVE E SEM SUPABASE
     throw new Error("API_KEY_MISSING");
 
   } catch (error) {
@@ -325,7 +309,7 @@ export async function analyzeMeal(
         throw new Error("API_KEY_MISSING");
     }
 
-    let finalErrorMessage = "Ocorreu um erro desconhecido durante a análise.";
+    let finalErrorMessage = "Ocorreu um erro desconhecido.";
 
     if (error instanceof Error) {
         finalErrorMessage = error.message;
@@ -334,11 +318,8 @@ export async function analyzeMeal(
     } else if (typeof error === 'object' && error !== null) {
         try {
             finalErrorMessage = JSON.stringify(error);
-            if (finalErrorMessage === '{}' || finalErrorMessage.includes('isTrusted')) {
-                finalErrorMessage = "Erro de processamento da imagem. Tente tirar outra foto.";
-            }
         } catch {
-            finalErrorMessage = "Erro crítico de sistema.";
+            finalErrorMessage = "Erro de sistema não identificado.";
         }
     }
 
@@ -364,7 +345,6 @@ export async function generateMenuSuggestion(
             return response.text || "Sem resposta.";
         }
 
-        // MODO SAAS (Sem chave local)
         return `⚠️ Recurso em Migração\n\nO Assistente de Cardápio está sendo movido para nossos servidores seguros e estará disponível na próxima atualização.\n\nPor favor, utilize a função principal de "Analisar Refeição" (acima), que já está 100% operacional no seu plano!`;
 
     } catch (error) {
