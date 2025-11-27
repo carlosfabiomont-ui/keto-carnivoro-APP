@@ -153,9 +153,9 @@ function generateMenuPrompt(protein: ProteinType, diet: DietType, strictness: St
     `;
 }
 
-// Nova função para redimensionar e comprimir imagem (Super Otimizada)
-// Reduzida para 600px e 60% de qualidade para garantir upload instantâneo mobile
-const resizeAndCompressImage = (file: File, maxWidth = 600, quality = 0.6): Promise<string> => {
+// Nova função para redimensionar e comprimir imagem (Mobile-First Extreme Optimization)
+// Reduzida para 400px e 60% de qualidade para garantir upload instantâneo e evitar timeouts
+const resizeAndCompressImage = (file: File, maxWidth = 400, quality = 0.6): Promise<string> => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.readAsDataURL(file);
@@ -179,10 +179,6 @@ const resizeAndCompressImage = (file: File, maxWidth = 600, quality = 0.6): Prom
                     ctx.drawImage(img, 0, 0, width, height);
                     // Comprime para JPEG com qualidade agressiva
                     const dataUrl = canvas.toDataURL('image/jpeg', quality);
-                    
-                    // Log para debug de tamanho (só visível no console de desenvolvedor)
-                    // console.log("Tamanho final da imagem (aprox KB):", Math.round((dataUrl.length * 3) / 4 / 1024));
-                    
                     // Remove o prefixo data:image/jpeg;base64,
                     resolve(dataUrl.split(',')[1]);
                 } else {
@@ -247,12 +243,21 @@ export async function analyzeMeal(
         });
 
         if (error) {
-            console.error("Erro na Edge Function:", error);
-            // Mensagem amigável para erro de conexão/tamanho
-            if (error.message && error.message.includes("Failed to send a request")) {
-                throw new Error("Falha no envio da imagem. Verifique sua conexão ou tente uma imagem menor.");
+            console.error("Erro detalhado na Edge Function:", error);
+            
+            // Tratamento de erros comuns
+            const errorMessage = error.message || String(error);
+
+            if (errorMessage.includes("Failed to send a request")) {
+                throw new Error("Sua conexão de internet está instável para enviar a foto. Tente conectar no Wi-Fi.");
             }
-            throw new Error(error.message || "Falha na comunicação com o servidor.");
+            
+            // Tenta ver se é um erro de função não encontrada
+            if (errorMessage.includes("Function not found")) {
+                throw new Error("Erro de Configuração: O servidor de análise (Edge Function) ainda não foi implantado corretamente.");
+            }
+
+            throw new Error(`Erro do Servidor: ${errorMessage}`);
         }
 
         // A Edge Function já deve retornar o JSON pronto ou texto
