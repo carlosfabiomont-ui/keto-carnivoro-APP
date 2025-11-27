@@ -154,8 +154,8 @@ function generateMenuPrompt(protein: ProteinType, diet: DietType, strictness: St
 }
 
 // Nova função para redimensionar e comprimir imagem (Mobile-First Extreme Optimization)
-// Reduzida para 400px e 60% de qualidade para garantir upload instantâneo e evitar timeouts
-const resizeAndCompressImage = (file: File, maxWidth = 400, quality = 0.6): Promise<string> => {
+// Configurada para 512px e 50% de qualidade para garantir que o payload seja minúsculo
+const resizeAndCompressImage = (file: File, maxWidth = 512, quality = 0.5): Promise<string> => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.readAsDataURL(file);
@@ -182,14 +182,14 @@ const resizeAndCompressImage = (file: File, maxWidth = 400, quality = 0.6): Prom
                     // Remove o prefixo data:image/jpeg;base64,
                     resolve(dataUrl.split(',')[1]);
                 } else {
-                    reject(new Error("Não foi possível criar contexto do canvas"));
+                    reject(new Error("Erro interno: Falha ao processar imagem."));
                 }
             };
             // Tratamento de erro explícito para carregamento de imagem
-            img.onerror = () => reject(new Error("Erro ao carregar a imagem para processamento. O arquivo pode estar corrompido."));
+            img.onerror = () => reject(new Error("Erro ao ler a imagem. O arquivo pode estar corrompido ou formato inválido."));
         };
         // Tratamento de erro explícito para leitura de arquivo
-        reader.onerror = () => reject(new Error("Erro ao ler o arquivo de imagem. Tente escolher outra foto."));
+        reader.onerror = () => reject(new Error("Erro de permissão ou leitura do arquivo. Tente escolher outra foto."));
     });
 };
 
@@ -251,12 +251,13 @@ export async function analyzeMeal(
             const errorMessage = error.message || String(error);
 
             if (errorMessage.includes("Failed to send a request")) {
-                throw new Error("Sua conexão de internet está instável para enviar a foto. Tente conectar no Wi-Fi.");
+                // Erro de timeout do cliente ou payload. Não culpamos a internet do usuário.
+                throw new Error("Erro de comunicação: O servidor demorou muito para responder ou a conexão foi interrompida. Tente novamente.");
             }
             
             // Tenta ver se é um erro de função não encontrada
             if (errorMessage.includes("Function not found")) {
-                throw new Error("Erro de Configuração: O servidor de análise (Edge Function) ainda não foi implantado corretamente.");
+                throw new Error("Erro de Configuração: O servidor de análise ainda não foi implantado corretamente (Função 'analyze-meal' não encontrada).");
             }
 
             throw new Error(`Erro do Servidor: ${errorMessage}`);
