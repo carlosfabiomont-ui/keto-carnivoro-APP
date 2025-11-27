@@ -153,12 +153,42 @@ function generateMenuPrompt(protein: ProteinType, diet: DietType, strictness: St
     `;
 }
 
-const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve((reader.result as string).split(',')[1]);
-    reader.onerror = error => reject(error);
-});
+// Nova função para redimensionar e comprimir imagem
+const resizeAndCompressImage = (file: File, maxWidth = 1024, quality = 0.7): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target?.result as string;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+
+                if (width > maxWidth) {
+                    height = (maxWidth / width) * height;
+                    width = maxWidth;
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    ctx.drawImage(img, 0, 0, width, height);
+                    // Comprime para JPEG com qualidade 0.7 (70%)
+                    const dataUrl = canvas.toDataURL('image/jpeg', quality);
+                    // Remove o prefixo data:image/jpeg;base64,
+                    resolve(dataUrl.split(',')[1]);
+                } else {
+                    reject(new Error("Não foi possível criar contexto do canvas"));
+                }
+            };
+            img.onerror = (error) => reject(error);
+        };
+        reader.onerror = (error) => reject(error);
+    });
+};
 
 export async function analyzeMeal(
   imageFile: File,
@@ -166,7 +196,8 @@ export async function analyzeMeal(
   strictness: StrictnessLevel
 ): Promise<AnalysisResult> {
   try {
-    const imageBase64 = await toBase64(imageFile);
+    // Usa a nova função de compressão em vez do toBase64 simples
+    const imageBase64 = await resizeAndCompressImage(imageFile);
     
     // 1. TENTATIVA COM CHAVE LOCAL (Modo Dev / Visitante com chave)
     const localKey = getStoredApiKey();
@@ -178,7 +209,7 @@ export async function analyzeMeal(
         
         const imagePart = {
             inlineData: {
-                mimeType: imageFile.type,
+                mimeType: "image/jpeg", // Forçamos JPEG devido à compressão
                 data: imageBase64,
             },
         };
