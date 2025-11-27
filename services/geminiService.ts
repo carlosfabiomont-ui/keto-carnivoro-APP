@@ -1,5 +1,6 @@
+
 import { GoogleGenAI, Type } from '@google/genai';
-import { supabase } from '../lib/supabaseClient';
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from '../lib/supabaseClient';
 import type { DietType, StrictnessLevel, AnalysisResult, ProteinType } from '../types';
 
 const DIET_CONFIG = {
@@ -266,38 +267,61 @@ export async function analyzeMeal(
         return JSON.parse(resultText) as AnalysisResult;
     }
 
-    // 2. TENTATIVA VIA SUPABASE EDGE FUNCTION (Modo SaaS)
+    // 2. TENTATIVA VIA SUPABASE EDGE FUNCTION (Modo SaaS) - RAW FETCH
     if (supabase) {
-        console.log("Chamando Supabase Edge Function...");
+        console.log("Chamando Supabase Edge Function via Fetch Direto...");
         
-        // Chamada direta sem timeout manual para evitar cancelamento prematuro em redes lentas
-        const { data, error } = await supabase.functions.invoke('analyze-meal', {
-            body: { 
+        // Obter Sessão para Token de Autorização
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!session) {
+             throw new Error("Sessão expirada. Faça login novamente.");
+        }
+
+        const functionUrl = `${SUPABASE_URL}/functions/v1/analyze-meal`;
+        
+        const response = await fetch(functionUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`,
+                'apikey': SUPABASE_ANON_KEY
+            },
+            body: JSON.stringify({ 
                 image: imageBase64, 
                 diet, 
                 strictness 
-            }
+            })
         });
 
-        if (error) {
-            console.error("Erro detalhado na Edge Function:", error);
-            
-            const errorMessage = error.message || String(error);
+        const responseText = await response.text();
 
-            if (errorMessage.includes("Failed to send a request")) {
-                throw new Error("Erro de Conexão com o Servidor. O envio falhou. Verifique sua internet e tente novamente.");
-            }
+        if (!response.ok) {
+            console.error(`Erro HTTP ${response.status}:`, responseText);
             
-            if (errorMessage.includes("Function not found")) {
-                throw new Error("Erro Crítico: A função do servidor 'analyze-meal' não foi encontrada. O deploy foi realizado?");
+            // Tratamento de erros comuns
+            if (response.status === 504) {
+                 throw new Error("Timeout: O servidor demorou muito para responder (504). A análise pode ter ocorrido, mas não recebemos a resposta.");
+            }
+            if (response.status === 500) {
+                 throw new Error(`Erro Interno do Servidor (500). Detalhes: ${responseText.slice(0, 100)}`);
+            }
+            if (response.status === 404) {
+                 throw new Error("Função não encontrada (404). Verifique se o deploy 'analyze-meal' foi feito no Supabase.");
+            }
+             if (response.status === 401) {
+                 throw new Error("Não autorizado (401). Tente sair e entrar novamente.");
             }
 
-            // Repassa o erro real do servidor
-            throw new Error(`Erro do Servidor: ${errorMessage}`);
+            throw new Error(`Erro do Servidor (${response.status}): ${responseText}`);
         }
 
-        if (typeof data === 'object') return data as AnalysisResult;
-        return JSON.parse(data) as AnalysisResult;
+        // Se deu sucesso, tenta parsear o JSON
+        try {
+            return JSON.parse(responseText) as AnalysisResult;
+        } catch (e) {
+            throw new Error("O servidor respondeu, mas não foi um JSON válido. Resposta: " + responseText.slice(0, 50));
+        }
     }
 
     throw new Error("API_KEY_MISSING");
