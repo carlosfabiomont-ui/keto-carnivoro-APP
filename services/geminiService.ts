@@ -302,7 +302,11 @@ export async function analyzeMeal(
             const responseText = await response.text();
             console.error(`Erro HTTP ${response.status}:`, responseText);
             
-            // Tratamento de erros comuns
+            // Tratamento de erros comuns e específicos do Google API Proxy
+            if (responseText.includes("API_KEY_INVALID") || responseText.includes("API key not valid")) {
+                throw new Error("Erro de Configuração no Servidor: A chave API do Google (GEMINI_API_KEY) nos Secrets do Supabase é inválida, tem restrições de IP incorretas ou expirou. Gere uma nova chave sem restrições no Google AI Studio e atualize no Supabase.");
+            }
+
             if (response.status === 404) {
                  throw new Error("Erro 404: A Função não foi encontrada. Verifique se você fez o DEPLOY com o nome 'fun--es-subase-nova-an-lise-refei--o'.");
             }
