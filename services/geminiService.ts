@@ -153,20 +153,40 @@ function generateMenuPrompt(protein: ProteinType, diet: DietType, strictness: St
     `;
 }
 
-// Nova função para redimensionar e comprimir imagem (Mobile-First Extreme Optimization)
-// Configurada para 512px e 50% de qualidade para garantir que o payload seja minúsculo
-const resizeAndCompressImage = (file: File, maxWidth = 512, quality = 0.5): Promise<string> => {
+// Helper: Converte Arquivo para Base64 (Sem resize - Plano B)
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+        const base64String = reader.result as string;
+        // Remove prefixo data:image/xxx;base64,
+        resolve(base64String.split(',')[1]);
+    };
+    reader.onerror = () => reject(new Error("Falha na leitura direta do arquivo."));
+    reader.readAsDataURL(file);
+  });
+};
+
+// Nova função ROBUSTA para redimensionar e comprimir imagem (Mobile-First)
+// Usa URL.createObjectURL para evitar estouro de memória com FileReader
+const resizeAndCompressImage = (file: File, maxWidth = 400, quality = 0.6): Promise<string> => {
     return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = (event) => {
-            const img = new Image();
-            img.src = event.target?.result as string;
-            img.onload = () => {
+        // Cria um link direto para o arquivo na memória (muito mais eficiente que ler string)
+        const objectUrl = URL.createObjectURL(file);
+        const img = new Image();
+        
+        img.src = objectUrl;
+
+        img.onload = () => {
+            // Limpa a memória do link assim que carregar
+            URL.revokeObjectURL(objectUrl);
+
+            try {
                 const canvas = document.createElement('canvas');
                 let width = img.width;
                 let height = img.height;
 
+                // Redimensiona mantendo proporção
                 if (width > maxWidth) {
                     height = (maxWidth / width) * height;
                     width = maxWidth;
@@ -174,22 +194,30 @@ const resizeAndCompressImage = (file: File, maxWidth = 512, quality = 0.5): Prom
 
                 canvas.width = width;
                 canvas.height = height;
+                
                 const ctx = canvas.getContext('2d');
                 if (ctx) {
+                    // Fundo branco para caso de PNG transparente
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillRect(0, 0, width, height);
+                    
                     ctx.drawImage(img, 0, 0, width, height);
-                    // Comprime para JPEG com qualidade agressiva
+                    
+                    // Comprime
                     const dataUrl = canvas.toDataURL('image/jpeg', quality);
-                    // Remove o prefixo data:image/jpeg;base64,
                     resolve(dataUrl.split(',')[1]);
                 } else {
-                    reject(new Error("Erro interno: Falha ao processar imagem."));
+                    reject(new Error("Falha ao inicializar processador de imagem."));
                 }
-            };
-            // Tratamento de erro explícito para carregamento de imagem
-            img.onerror = () => reject(new Error("Erro ao ler a imagem. O arquivo pode estar corrompido ou formato inválido."));
+            } catch (e) {
+                reject(new Error("Erro ao processar imagem no canvas."));
+            }
         };
-        // Tratamento de erro explícito para leitura de arquivo
-        reader.onerror = () => reject(new Error("Erro de permissão ou leitura do arquivo. Tente escolher outra foto."));
+
+        img.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            reject(new Error("O navegador não conseguiu ler esta imagem. O arquivo pode estar corrompido."));
+        };
     });
 };
 
@@ -199,8 +227,22 @@ export async function analyzeMeal(
   strictness: StrictnessLevel
 ): Promise<AnalysisResult> {
   try {
-    // Usa a nova função de compressão super otimizada
-    const imageBase64 = await resizeAndCompressImage(imageFile);
+    let imageBase64: string;
+
+    try {
+        // Tenta o método otimizado (resize)
+        imageBase64 = await resizeAndCompressImage(imageFile);
+    } catch (resizeError) {
+        console.warn("Falha na compressão automática, tentando fallback...", resizeError);
+        
+        // PLANO B: Se a compressão falhar, mas o arquivo for < 5MB, envia original
+        const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+        if (imageFile.size < MAX_SIZE_BYTES) {
+            imageBase64 = await fileToBase64(imageFile);
+        } else {
+            throw new Error("A imagem é muito grande e falhou ao ser comprimida. Tente tirar um print da foto ou usar uma menor.");
+        }
+    }
     
     // 1. TENTATIVA COM CHAVE LOCAL (Modo Dev / Visitante com chave)
     const localKey = getStoredApiKey();
@@ -212,7 +254,7 @@ export async function analyzeMeal(
         
         const imagePart = {
             inlineData: {
-                mimeType: "image/jpeg", // Forçamos JPEG devido à compressão
+                mimeType: "image/jpeg",
                 data: imageBase64,
             },
         };
@@ -236,13 +278,20 @@ export async function analyzeMeal(
     if (supabase) {
         console.log("Chamando Supabase Edge Function...");
         
-        const { data, error } = await supabase.functions.invoke('analyze-meal', {
+        // Adiciona Timeout de 60 segundos para evitar loading infinito
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("Timeout: O servidor demorou muito para responder.")), 60000)
+        );
+
+        const fetchPromise = supabase.functions.invoke('analyze-meal', {
             body: { 
                 image: imageBase64, 
                 diet, 
                 strictness 
             }
         });
+
+        const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
 
         if (error) {
             console.error("Erro detalhado na Edge Function:", error);
@@ -251,11 +300,9 @@ export async function analyzeMeal(
             const errorMessage = error.message || String(error);
 
             if (errorMessage.includes("Failed to send a request")) {
-                // Erro de timeout do cliente ou payload. Não culpamos a internet do usuário.
-                throw new Error("Erro de comunicação: O servidor demorou muito para responder ou a conexão foi interrompida. Tente novamente.");
+                throw new Error("Erro de conexão. Verifique se a foto não é excessivamente pesada ou tente novamente.");
             }
             
-            // Tenta ver se é um erro de função não encontrada
             if (errorMessage.includes("Function not found")) {
                 throw new Error("Erro de Configuração: O servidor de análise ainda não foi implantado corretamente (Função 'analyze-meal' não encontrada).");
             }
@@ -274,12 +321,10 @@ export async function analyzeMeal(
   } catch (error) {
     console.error("Erro geral na análise:", error);
     
-    // Verifica se é um erro de API Key explicitamente
     if (error instanceof Error && error.message.includes("API_KEY_MISSING")) {
         throw new Error("API_KEY_MISSING");
     }
 
-    // Converte qualquer tipo de erro (Event, Object, String) em uma mensagem legível
     let finalErrorMessage = "Ocorreu um erro desconhecido durante a análise.";
 
     if (error instanceof Error) {
@@ -287,11 +332,10 @@ export async function analyzeMeal(
     } else if (typeof error === 'string') {
         finalErrorMessage = error;
     } else if (typeof error === 'object' && error !== null) {
-        // Tenta extrair alguma informação útil do objeto
         try {
             finalErrorMessage = JSON.stringify(error);
             if (finalErrorMessage === '{}' || finalErrorMessage.includes('isTrusted')) {
-                finalErrorMessage = "Erro de processamento de imagem. Tente tirar outra foto.";
+                finalErrorMessage = "Erro de processamento da imagem. Tente tirar outra foto.";
             }
         } catch {
             finalErrorMessage = "Erro crítico de sistema.";
@@ -321,14 +365,11 @@ export async function generateMenuSuggestion(
         }
 
         // MODO SAAS (Sem chave local)
-        // Como ainda não temos uma Edge Function específica para 'generate-menu',
-        // retornamos uma mensagem informativa em vez de quebrar o app.
         return `⚠️ Recurso em Migração\n\nO Assistente de Cardápio está sendo movido para nossos servidores seguros e estará disponível na próxima atualização.\n\nPor favor, utilize a função principal de "Analisar Refeição" (acima), que já está 100% operacional no seu plano!`;
 
     } catch (error) {
         console.error("Erro ao gerar menu:", error);
          if (error instanceof Error) {
-            // Em vez de lançar erro, retorna mensagem amigável no menu
             return "Não foi possível gerar sugestão no momento. Tente novamente mais tarde.";
         }
         return "Erro desconhecido.";
