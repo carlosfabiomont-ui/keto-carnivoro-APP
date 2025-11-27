@@ -185,9 +185,11 @@ const resizeAndCompressImage = (file: File, maxWidth = 400, quality = 0.6): Prom
                     reject(new Error("Não foi possível criar contexto do canvas"));
                 }
             };
-            img.onerror = (error) => reject(error);
+            // Tratamento de erro explícito para carregamento de imagem
+            img.onerror = () => reject(new Error("Erro ao carregar a imagem para processamento. O arquivo pode estar corrompido."));
         };
-        reader.onerror = (error) => reject(error);
+        // Tratamento de erro explícito para leitura de arquivo
+        reader.onerror = () => reject(new Error("Erro ao ler o arquivo de imagem. Tente escolher outra foto."));
     });
 };
 
@@ -270,14 +272,32 @@ export async function analyzeMeal(
 
   } catch (error) {
     console.error("Erro geral na análise:", error);
-    if (error instanceof Error) {
-         if (error.message.includes("API_KEY_MISSING")) {
-            throw new Error("API_KEY_MISSING");
-         }
-         // Repassa o erro do servidor de forma limpa
-        throw new Error(`${error.message}`);
+    
+    // Verifica se é um erro de API Key explicitamente
+    if (error instanceof Error && error.message.includes("API_KEY_MISSING")) {
+        throw new Error("API_KEY_MISSING");
     }
-    throw new Error("Ocorreu um erro desconhecido durante a análise.");
+
+    // Converte qualquer tipo de erro (Event, Object, String) em uma mensagem legível
+    let finalErrorMessage = "Ocorreu um erro desconhecido durante a análise.";
+
+    if (error instanceof Error) {
+        finalErrorMessage = error.message;
+    } else if (typeof error === 'string') {
+        finalErrorMessage = error;
+    } else if (typeof error === 'object' && error !== null) {
+        // Tenta extrair alguma informação útil do objeto
+        try {
+            finalErrorMessage = JSON.stringify(error);
+            if (finalErrorMessage === '{}' || finalErrorMessage.includes('isTrusted')) {
+                finalErrorMessage = "Erro de processamento de imagem. Tente tirar outra foto.";
+            }
+        } catch {
+            finalErrorMessage = "Erro crítico de sistema.";
+        }
+    }
+
+    throw new Error(finalErrorMessage);
   }
 }
 
