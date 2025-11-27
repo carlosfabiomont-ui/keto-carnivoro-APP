@@ -278,10 +278,12 @@ export async function analyzeMeal(
              throw new Error("Sessão expirada. Faça login novamente.");
         }
 
-        const functionUrl = `${SUPABASE_URL}/functions/v1/analyze-meal`;
+        // URL ATUALIZADA PARA O NOME CORRETO DA FUNÇÃO
+        const functionUrl = `${SUPABASE_URL}/functions/v1/fun--es-subase-nova-an-lise-refei--o`;
         
         const response = await fetch(functionUrl, {
             method: 'POST',
+            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${session.access_token}`,
@@ -300,14 +302,14 @@ export async function analyzeMeal(
             console.error(`Erro HTTP ${response.status}:`, responseText);
             
             // Tratamento de erros comuns
+            if (response.status === 0 || response.status === 404) {
+                 throw new Error("Erro de Conexão (404/CORS). Verifique se o nome da função no código corresponde EXATAMENTE ao nome no Supabase.");
+            }
             if (response.status === 504) {
                  throw new Error("Timeout: O servidor demorou muito para responder (504). A análise pode ter ocorrido, mas não recebemos a resposta.");
             }
             if (response.status === 500) {
                  throw new Error(`Erro Interno do Servidor (500). Detalhes: ${responseText.slice(0, 100)}`);
-            }
-            if (response.status === 404) {
-                 throw new Error("Função não encontrada (404). Verifique se o deploy 'analyze-meal' foi feito no Supabase.");
             }
              if (response.status === 401) {
                  throw new Error("Não autorizado (401). Tente sair e entrar novamente.");
