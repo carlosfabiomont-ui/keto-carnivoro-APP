@@ -281,9 +281,10 @@ export async function analyzeMeal(
         // URL ATUALIZADA PARA O NOME CORRETO DA FUNÇÃO
         const functionUrl = `${SUPABASE_URL}/functions/v1/fun--es-subase-nova-an-lise-refei--o`;
         
+        // NOTA: Removido credentials: 'include' para evitar erro de CORS se o servidor retornar wildcard (*)
         const response = await fetch(functionUrl, {
             method: 'POST',
-            credentials: 'include',
+            mode: 'cors', 
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${session.access_token}`,
@@ -296,20 +297,20 @@ export async function analyzeMeal(
             })
         });
 
-        const responseText = await response.text();
-
+        // Verificação específica para erro de rede/CORS que o fetch lança como exceção, mas se conectar e der erro HTTP:
         if (!response.ok) {
+            const responseText = await response.text();
             console.error(`Erro HTTP ${response.status}:`, responseText);
             
             // Tratamento de erros comuns
-            if (response.status === 0 || response.status === 404) {
-                 throw new Error("Erro de Conexão (404/CORS). Verifique se o nome da função no código corresponde EXATAMENTE ao nome no Supabase.");
+            if (response.status === 404) {
+                 throw new Error("Erro 404: A Função não foi encontrada. Verifique se você fez o DEPLOY com o nome 'fun--es-subase-nova-an-lise-refei--o'.");
             }
             if (response.status === 504) {
                  throw new Error("Timeout: O servidor demorou muito para responder (504). A análise pode ter ocorrido, mas não recebemos a resposta.");
             }
             if (response.status === 500) {
-                 throw new Error(`Erro Interno do Servidor (500). Detalhes: ${responseText.slice(0, 100)}`);
+                 throw new Error(`Erro Interno do Servidor (500). Verifique se a variável GEMINI_API_KEY está configurada no Supabase.`);
             }
              if (response.status === 401) {
                  throw new Error("Não autorizado (401). Tente sair e entrar novamente.");
@@ -317,6 +318,8 @@ export async function analyzeMeal(
 
             throw new Error(`Erro do Servidor (${response.status}): ${responseText}`);
         }
+
+        const responseText = await response.text();
 
         // Se deu sucesso, tenta parsear o JSON
         try {
@@ -338,7 +341,11 @@ export async function analyzeMeal(
     let finalErrorMessage = "Ocorreu um erro desconhecido.";
 
     if (error instanceof Error) {
-        finalErrorMessage = error.message;
+        if (error.message.includes("Failed to fetch")) {
+            finalErrorMessage = "Erro de Conexão (CORS/Rede). O servidor recusou a conexão. Isso acontece se a função não tiver o código de CORS correto ou se o nome estiver errado no deploy.";
+        } else {
+            finalErrorMessage = error.message;
+        }
     } else if (typeof error === 'string') {
         finalErrorMessage = error;
     } else if (typeof error === 'object' && error !== null) {
