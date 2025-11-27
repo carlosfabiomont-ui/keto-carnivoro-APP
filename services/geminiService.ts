@@ -212,7 +212,8 @@ export async function analyzeMeal(
 
         if (error) {
             console.error("Erro na Edge Function:", error);
-            throw new Error(`Erro no servidor: ${error.message}`);
+            // Captura erros específicos do servidor (ex: auth)
+            throw new Error(error.message || "Falha na comunicação com o servidor.");
         }
 
         // A Edge Function já deve retornar o JSON pronto ou texto
@@ -229,6 +230,7 @@ export async function analyzeMeal(
          if (error.message.includes("API_KEY_MISSING")) {
             throw new Error("API_KEY_MISSING");
          }
+         // Repassa o erro do servidor de forma limpa
         throw new Error(`${error.message}`);
     }
     throw new Error("Ocorreu um erro desconhecido durante a análise.");
@@ -253,18 +255,17 @@ export async function generateMenuSuggestion(
             return response.text || "Sem resposta.";
         }
 
-        // TODO: Criar Edge Function para Menu se necessário. 
-        // Por enquanto, se não tiver chave, pede para configurar.
-        throw new Error("API_KEY_MISSING");
+        // MODO SAAS (Sem chave local)
+        // Como ainda não temos uma Edge Function específica para 'generate-menu',
+        // retornamos uma mensagem informativa em vez de quebrar o app.
+        return `⚠️ Recurso em Migração\n\nO Assistente de Cardápio está sendo movido para nossos servidores seguros e estará disponível na próxima atualização.\n\nPor favor, utilize a função principal de "Analisar Refeição" (acima), que já está 100% operacional no seu plano!`;
 
     } catch (error) {
         console.error("Erro ao gerar menu:", error);
          if (error instanceof Error) {
-             if (error.message.includes("API_KEY_MISSING")) {
-                throw new Error("API_KEY_MISSING");
-             }
-            throw new Error(`Falha ao gerar sugestão: ${error.message}`);
+            // Em vez de lançar erro, retorna mensagem amigável no menu
+            return "Não foi possível gerar sugestão no momento. Tente novamente mais tarde.";
         }
-        throw new Error("Erro desconhecido.");
+        return "Erro desconhecido.";
     }
 }

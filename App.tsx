@@ -175,7 +175,14 @@ const App: React.FC = () => {
   };
 
   const handleAnalyze = useCallback(async () => {
-    // Verifica se tem créditos
+    // 1. Verifica se está logado OU tem chave local
+    const hasLocalKey = !!getStoredApiKey();
+    if (!session && !hasLocalKey) {
+        setError("🔒 Login Necessário\n\nPara usar nossa IA avançada via servidor, por favor faça login com o Google (botão no topo). É grátis e seguro.");
+        return;
+    }
+
+    // 2. Verifica se tem créditos
     if (credits !== null && credits <= 0) {
         setShowUpgradeModal(true);
         return;
@@ -200,11 +207,13 @@ const App: React.FC = () => {
 
     } catch (err) {
         if (err instanceof Error) {
+            // Se ainda assim der erro de chave (muito raro agora), abre configurações
             if (err.message === "API_KEY_MISSING") {
                 setError(null);
                 setShowSettingsModal(true);
                 return;
             }
+            // Exibe mensagem de erro limpa vinda do servidor ou local
             setError(err.message);
         } else {
             setError("Ocorreu um erro desconhecido.");
@@ -356,8 +365,17 @@ const App: React.FC = () => {
             
             <div className="lg:col-span-3">
                  {isLoading && <LoadingSkeleton />}
-                 {error && <div className="bg-red-900/50 text-red-300 p-4 rounded-lg border border-red-700">{error}</div>}
+                 
+                 {/* Mensagem de Erro mais visível */}
+                 {error && (
+                    <div className="bg-brand-gray/50 text-white p-6 rounded-xl border border-brand-gray-light/20 flex flex-col items-center text-center animate-fade-in">
+                        <span className="text-3xl mb-2">🤔</span>
+                        <div className="whitespace-pre-wrap font-medium">{error}</div>
+                    </div>
+                 )}
+                 
                  {analysisResult && <ResultsDashboard result={analysisResult} onReset={handleReset} />}
+                 
                  {!isLoading && !analysisResult && !error && (
                     <MenuAssistant diet={diet} strictness={strictness} />
                  )}
