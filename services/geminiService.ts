@@ -153,8 +153,9 @@ function generateMenuPrompt(protein: ProteinType, diet: DietType, strictness: St
     `;
 }
 
-// Nova função para redimensionar e comprimir imagem
-const resizeAndCompressImage = (file: File, maxWidth = 1024, quality = 0.7): Promise<string> => {
+// Nova função para redimensionar e comprimir imagem (Super Otimizada)
+// Reduzida para 600px e 60% de qualidade para garantir upload instantâneo mobile
+const resizeAndCompressImage = (file: File, maxWidth = 600, quality = 0.6): Promise<string> => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.readAsDataURL(file);
@@ -176,8 +177,12 @@ const resizeAndCompressImage = (file: File, maxWidth = 1024, quality = 0.7): Pro
                 const ctx = canvas.getContext('2d');
                 if (ctx) {
                     ctx.drawImage(img, 0, 0, width, height);
-                    // Comprime para JPEG com qualidade 0.7 (70%)
+                    // Comprime para JPEG com qualidade agressiva
                     const dataUrl = canvas.toDataURL('image/jpeg', quality);
+                    
+                    // Log para debug de tamanho (só visível no console de desenvolvedor)
+                    // console.log("Tamanho final da imagem (aprox KB):", Math.round((dataUrl.length * 3) / 4 / 1024));
+                    
                     // Remove o prefixo data:image/jpeg;base64,
                     resolve(dataUrl.split(',')[1]);
                 } else {
@@ -196,7 +201,7 @@ export async function analyzeMeal(
   strictness: StrictnessLevel
 ): Promise<AnalysisResult> {
   try {
-    // Usa a nova função de compressão em vez do toBase64 simples
+    // Usa a nova função de compressão super otimizada
     const imageBase64 = await resizeAndCompressImage(imageFile);
     
     // 1. TENTATIVA COM CHAVE LOCAL (Modo Dev / Visitante com chave)
@@ -243,7 +248,10 @@ export async function analyzeMeal(
 
         if (error) {
             console.error("Erro na Edge Function:", error);
-            // Captura erros específicos do servidor (ex: auth)
+            // Mensagem amigável para erro de conexão/tamanho
+            if (error.message && error.message.includes("Failed to send a request")) {
+                throw new Error("Falha no envio da imagem. Verifique sua conexão ou tente uma imagem menor.");
+            }
             throw new Error(error.message || "Falha na comunicação com o servidor.");
         }
 
