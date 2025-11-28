@@ -377,7 +377,12 @@ const App: React.FC = () => {
                  {analysisResult && <ResultsDashboard result={analysisResult} onReset={handleReset} />}
                  
                  {!isLoading && !analysisResult && !error && (
-                    <MenuAssistant diet={diet} strictness={strictness} />
+                    <MenuAssistant 
+                        diet={diet} 
+                        strictness={strictness}
+                        userProfile={userProfile}
+                        onUpgrade={() => setShowUpgradeModal(true)}
+                    />
                  )}
             </div>
         </div>

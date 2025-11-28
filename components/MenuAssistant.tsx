@@ -1,11 +1,13 @@
 import React, { useState, useCallback } from 'react';
 import type { DietType, StrictnessLevel, ProteinType } from '../types';
 import { generateMenuSuggestion } from '../services/geminiService';
-import { SparklesIcon } from './Icons';
+import { SparklesIcon, LockClosedIcon, CrownIcon } from './Icons';
 
 interface MenuAssistantProps {
     diet: DietType;
     strictness: StrictnessLevel;
+    userProfile: any; // Recebe o perfil do usuário logado
+    onUpgrade: () => void; // Função para abrir o modal de upgrade
 }
 
 const proteinOptions: { value: ProteinType, label: string, emoji: string }[] = [
@@ -15,13 +17,20 @@ const proteinOptions: { value: ProteinType, label: string, emoji: string }[] = [
     { value: 'peixe', label: 'Peixe', emoji: '🐟' },
 ];
 
-const MenuAssistant: React.FC<MenuAssistantProps> = ({ diet, strictness }) => {
+const MenuAssistant: React.FC<MenuAssistantProps> = ({ diet, strictness, userProfile, onUpgrade }) => {
     const [selectedProtein, setSelectedProtein] = useState<ProteinType | null>(null);
     const [suggestion, setSuggestion] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    const isPro = userProfile?.is_pro === true;
+
     const handleGenerate = useCallback(async () => {
+        if (!isPro) {
+            onUpgrade();
+            return;
+        }
+
         if (!selectedProtein) {
             setError("Por favor, escolha um tipo de proteína.");
             return;
@@ -42,10 +51,23 @@ const MenuAssistant: React.FC<MenuAssistantProps> = ({ diet, strictness }) => {
         } finally {
             setIsLoading(false);
         }
-    }, [selectedProtein, diet, strictness]);
+    }, [selectedProtein, diet, strictness, isPro, onUpgrade]);
 
     return (
-        <div className="w-full bg-brand-gray/50 p-6 rounded-xl border border-brand-gray text-center animate-fade-in">
+        <div className="relative w-full bg-brand-gray/50 p-6 rounded-xl border border-brand-gray text-center animate-fade-in">
+            
+            {!isPro && (
+                <div className="absolute inset-0 z-10 bg-brand-dark/80 backdrop-blur-sm rounded-xl flex flex-col justify-center items-center p-4">
+                    <LockClosedIcon className="w-12 h-12 text-brand-primary mb-4" />
+                    <h3 className="text-lg font-bold text-white">Recurso Exclusivo PRO</h3>
+                    <p className="text-brand-gray-light text-sm mb-4">O Assistente de Cardápio está disponível apenas para assinantes.</p>
+                    <button onClick={onUpgrade} className="flex items-center gap-2 bg-brand-primary text-brand-dark font-bold py-2 px-4 rounded-lg hover:bg-brand-secondary transition-colors">
+                        <CrownIcon className="w-5 h-5" />
+                        Seja PRO
+                    </button>
+                </div>
+            )}
+
             <SparklesIcon className="w-16 h-16 text-brand-primary opacity-50 mx-auto mb-4" />
             <h2 className="text-xl font-bold text-white">Assistente de Cardápio</h2>
             <p className="text-brand-gray-light mb-6">Sem ideias? Deixe a IA criar uma sugestão para você com base na sua dieta.</p>
