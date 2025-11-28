@@ -160,7 +160,6 @@ const fileToBase64 = (file: File): Promise<string> => {
     const reader = new FileReader();
     reader.onloadend = () => {
         const base64String = reader.result as string;
-        // Remove prefixo data:image/xxx;base64,
         resolve(base64String.split(',')[1]);
     };
     reader.onerror = () => reject(new Error("Falha na leitura direta do arquivo."));
@@ -169,7 +168,6 @@ const fileToBase64 = (file: File): Promise<string> => {
 };
 
 // Nova função ROBUSTA para redimensionar e comprimir imagem (Mobile-First)
-// Reduzida para 350px e qualidade 0.5 para garantir upload em redes instáveis (Payload < 50kb)
 const resizeAndCompressImage = (file: File, maxWidth = 350, quality = 0.5): Promise<string> => {
     return new Promise((resolve, reject) => {
         const objectUrl = URL.createObjectURL(file);
@@ -228,7 +226,6 @@ export async function analyzeMeal(
         // Tenta o método otimizado (resize super comprimido)
         imageBase64 = await resizeAndCompressImage(imageFile);
     } catch (resizeError) {
-        console.warn("Falha na compressão automática, tentando fallback...", resizeError);
         const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
         if (imageFile.size < MAX_SIZE_BYTES) {
             imageBase64 = await fileToBase64(imageFile);
@@ -237,11 +234,10 @@ export async function analyzeMeal(
         }
     }
     
-    // 1. TENTATIVA COM CHAVE LOCAL
+    // 1. TENTATIVA COM CHAVE LOCAL (DEV ONLY)
     const localKey = getStoredApiKey();
 
     if (localKey) {
-        console.log("Usando chave API local...");
         const genAI = getGoogleGenAI(localKey);
         const prompt = generatePrompt(diet, strictness);
         
@@ -269,19 +265,15 @@ export async function analyzeMeal(
 
     // 2. TENTATIVA VIA SUPABASE EDGE FUNCTION (Modo SaaS) - RAW FETCH
     if (supabase) {
-        console.log("Chamando Supabase Edge Function via Fetch Direto...");
-        
-        // Obter Sessão para Token de Autorização
         const { data: { session } } = await supabase.auth.getSession();
         
         if (!session) {
              throw new Error("Sessão expirada. Faça login novamente.");
         }
 
-        // URL ATUALIZADA PARA O NOME CORRETO DA FUNÇÃO
+        // URL da Edge Function
         const functionUrl = `${SUPABASE_URL}/functions/v1/fun--es-subase-nova-an-lise-refei--o`;
         
-        // NOTA: Removido credentials: 'include' para evitar erro de CORS se o servidor retornar wildcard (*)
         const response = await fetch(functionUrl, {
             method: 'POST',
             mode: 'cors', 
@@ -291,30 +283,22 @@ export async function analyzeMeal(
                 'apikey': SUPABASE_ANON_KEY
             },
             body: JSON.stringify({ 
+                action: 'analyze_meal', // Identificador da ação
                 image: imageBase64, 
                 diet, 
                 strictness 
             })
         });
 
-        // Verificação específica para erro de rede/CORS que o fetch lança como exceção, mas se conectar e der erro HTTP:
         if (!response.ok) {
             const responseText = await response.text();
-            console.error(`Erro HTTP ${response.status}:`, responseText);
             
-            // Tratamento de erros comuns e específicos do Google API Proxy
             if (responseText.includes("API_KEY_INVALID") || responseText.includes("API key not valid")) {
                 throw new Error("Erro de Configuração no Servidor: A chave API do Google (GEMINI_API_KEY) nos Secrets do Supabase é inválida, tem restrições de IP incorretas ou expirou. Gere uma nova chave sem restrições no Google AI Studio e atualize no Supabase.");
             }
 
             if (response.status === 404) {
-                 throw new Error("Erro 404: A Função não foi encontrada. Verifique se você fez o DEPLOY com o nome 'fun--es-subase-nova-an-lise-refei--o'.");
-            }
-            if (response.status === 504) {
-                 throw new Error("Timeout: O servidor demorou muito para responder (504). A análise pode ter ocorrido, mas não recebemos a resposta.");
-            }
-            if (response.status === 500) {
-                 throw new Error(`Erro Interno do Servidor (500). Verifique se a variável GEMINI_API_KEY está configurada no Supabase.`);
+                 throw new Error("Erro 404: A Função não foi encontrada. Verifique se o nome da função está correto.");
             }
              if (response.status === 401) {
                  throw new Error("Não autorizado (401). Tente sair e entrar novamente.");
@@ -325,19 +309,16 @@ export async function analyzeMeal(
 
         const responseText = await response.text();
 
-        // Se deu sucesso, tenta parsear o JSON
         try {
             return JSON.parse(responseText) as AnalysisResult;
         } catch (e) {
-            throw new Error("O servidor respondeu, mas não foi um JSON válido. Resposta: " + responseText.slice(0, 50));
+            throw new Error("O servidor respondeu, mas não foi um JSON válido.");
         }
     }
 
     throw new Error("API_KEY_MISSING");
 
   } catch (error) {
-    console.error("Erro geral na análise:", error);
-    
     if (error instanceof Error && error.message.includes("API_KEY_MISSING")) {
         throw new Error("API_KEY_MISSING");
     }
@@ -346,7 +327,7 @@ export async function analyzeMeal(
 
     if (error instanceof Error) {
         if (error.message.includes("Failed to fetch")) {
-            finalErrorMessage = "Erro de Conexão (CORS/Rede). O servidor recusou a conexão. Isso acontece se a função não tiver o código de CORS correto ou se o nome estiver errado no deploy.";
+            finalErrorMessage = "Erro de Conexão (CORS/Rede). O servidor recusou a conexão. Isso acontece se a função não tiver o código de CORS correto.";
         } else {
             finalErrorMessage = error.message;
         }
@@ -370,6 +351,7 @@ export async function generateMenuSuggestion(
     strictness: StrictnessLevel
 ): Promise<string> {
     try {
+        // 1. CHAVE LOCAL (DEV)
         const localKey = getStoredApiKey();
 
         if (localKey) {
@@ -382,13 +364,48 @@ export async function generateMenuSuggestion(
             return response.text || "Sem resposta.";
         }
 
-        return `⚠️ Recurso em Migração\n\nO Assistente de Cardápio está sendo movido para nossos servidores seguros e estará disponível na próxima atualização.\n\nPor favor, utilize a função principal de "Analisar Refeição" (acima), que já está 100% operacional no seu plano!`;
+        // 2. SUPABASE (PRODUÇÃO)
+        if (supabase) {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) throw new Error("Faça login para gerar cardápios.");
+
+            const functionUrl = `${SUPABASE_URL}/functions/v1/fun--es-subase-nova-an-lise-refei--o`;
+            
+            const response = await fetch(functionUrl, {
+                method: 'POST',
+                mode: 'cors',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`,
+                    'apikey': SUPABASE_ANON_KEY
+                },
+                body: JSON.stringify({ 
+                    action: 'generate_menu', // Identificador da ação
+                    protein, 
+                    diet, 
+                    strictness 
+                })
+            });
+
+            if (!response.ok) {
+                 const txt = await response.text();
+                 // Detecção se o erro é porque o código do servidor ainda é o antigo (que espera imagem)
+                 if (txt.includes("image") || response.status === 400) {
+                     throw new Error("O código do servidor ainda não foi atualizado para suportar Cardápios. Por favor, atualize o código no Supabase.");
+                 }
+                 throw new Error(`Erro no servidor: ${txt}`);
+            }
+
+            const data = await response.json();
+            return data.result || "Sem sugestão disponível.";
+        }
+
+        return "Erro: Sistema indisponível.";
 
     } catch (error) {
-        console.error("Erro ao gerar menu:", error);
          if (error instanceof Error) {
-            return "Não foi possível gerar sugestão no momento. Tente novamente mais tarde.";
+            return `Não foi possível gerar: ${error.message}`;
         }
-        return "Erro desconhecido.";
+        return "Erro desconhecido ao gerar menu.";
     }
 }
