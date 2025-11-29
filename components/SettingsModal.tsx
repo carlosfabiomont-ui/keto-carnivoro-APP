@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { XCircleIcon, LightBulbIcon, UserCircleIcon, CrownIcon, Cog6ToothIcon } from './Icons';
+import { XCircleIcon, LightBulbIcon, UserCircleIcon, CrownIcon, Cog6ToothIcon, ArrowLeftOnRectangleIcon } from './Icons';
 import { getStoredApiKey, setStoredApiKey } from '../services/geminiService';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  session: any;
+  userProfile: any;
+  onLogout: () => void;
 }
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, session, userProfile, onLogout }) => {
   const [apiKey, setApiKey] = useState('');
   const [isSaved, setIsSaved] = useState(false);
   const [showDevSettings, setShowDevSettings] = useState(false);
@@ -17,7 +20,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       const stored = getStoredApiKey();
       if (stored) setApiKey(stored);
       setIsSaved(false);
-      // Se já tiver chave, não abre a aba dev automaticamente, a menos que queira
     }
   }, [isOpen]);
 
@@ -36,6 +38,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
        setTimeout(() => {
         onClose();
       }, 1000);
+  }
+
+  const handleLogoutClick = () => {
+      onLogout();
+      onClose();
   }
 
   if (!isOpen) return null;
@@ -60,27 +67,39 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             Minha Conta
         </h2>
         
-        {/* Seção Simulada de Perfil SaaS */}
+        {/* Seção de Perfil */}
         <div className="mb-6 bg-brand-gray/30 p-4 rounded-lg border border-brand-gray-light/10">
             <div className="flex items-center gap-4 mb-4">
-                <div className="w-12 h-12 bg-brand-gray rounded-full flex items-center justify-center text-brand-gray-light">
-                    <UserCircleIcon className="w-8 h-8" />
+                <div className="w-12 h-12 bg-brand-gray rounded-full flex items-center justify-center text-brand-gray-light overflow-hidden">
+                     {session?.user?.user_metadata?.avatar_url ? (
+                        <img src={session.user.user_metadata.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                     ) : (
+                        <UserCircleIcon className="w-8 h-8" />
+                     )}
                 </div>
                 <div>
-                    <p className="text-white font-semibold">Visitante</p>
-                    <p className="text-sm text-brand-gray-light">Faça login para salvar dados</p>
+                    <p className="text-white font-semibold truncate max-w-[180px]">{session?.user?.email || 'Visitante'}</p>
+                    <p className="text-sm text-brand-gray-light">{session ? 'Bem-vindo(a) de volta!' : 'Faça login para salvar dados'}</p>
                 </div>
             </div>
             <div className="flex justify-between items-center pt-3 border-t border-brand-gray-light/10">
                 <span className="text-sm text-brand-gray-light">Plano Atual:</span>
-                <span className="text-xs font-bold bg-brand-gray-light/20 text-brand-gray-light px-2 py-1 rounded-full border border-brand-gray-light/20">
-                    GRATUITO
-                </span>
+                {userProfile?.is_pro ? (
+                    <span className="text-xs font-bold bg-brand-primary/20 text-brand-primary px-2 py-1 rounded-full border border-brand-primary/30 flex items-center gap-1">
+                        <CrownIcon className="w-3 h-3"/> MEMBRO PRO
+                    </span>
+                ) : (
+                    <span className="text-xs font-bold bg-brand-gray-light/20 text-brand-gray-light px-2 py-1 rounded-full border border-brand-gray-light/20">
+                        GRATUITO
+                    </span>
+                )}
             </div>
-            <button className="mt-4 w-full py-2 bg-brand-primary/10 text-brand-primary text-sm font-bold rounded hover:bg-brand-primary/20 transition-colors flex items-center justify-center gap-2">
-                <CrownIcon className="w-4 h-4" />
-                Fazer Upgrade para PRO
-            </button>
+             {session && (
+                 <button onClick={handleLogoutClick} className="mt-4 w-full py-2 bg-brand-accent/10 text-red-400 text-sm font-bold rounded hover:bg-brand-accent/20 transition-colors flex items-center justify-center gap-2">
+                    <ArrowLeftOnRectangleIcon className="w-4 h-4" />
+                    Sair da Conta
+                </button>
+             )}
         </div>
 
         <hr className="border-brand-gray mb-6" />
@@ -101,7 +120,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                         Modo Sem Backend (B.Y.O.K)
                     </label>
                     <p className="text-xs text-brand-gray-light mb-3">
-                        Como ainda não conectamos o Supabase, você precisa da sua chave pessoal para testar o app.
+                        Para testes rápidos, você pode usar sua chave pessoal do AI Studio aqui. Ela não será salva no servidor.
                     </p>
                     <input
                         type="password"

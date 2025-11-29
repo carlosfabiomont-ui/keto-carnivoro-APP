@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import ImageUploader from './components/ImageUploader';
 import DietSelector from './components/DietSelector';
@@ -13,7 +14,7 @@ import MenuAssistant from './components/MenuAssistant';
 import SettingsModal from './components/SettingsModal';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
 
-const DAILY_LIMIT_GUEST = 1; // Limite menor para visitantes para incentivar o cadastro
+const DAILY_LIMIT_GUEST = 3; // Limite maior para visitantes para incentivar o cadastro
 
 const getTodayDateString = () => new Date().toISOString().split('T')[0];
 
@@ -271,16 +272,15 @@ const App: React.FC = () => {
           
           {session ? (
               <button 
-                onClick={handleLogout}
+                onClick={() => setShowSettingsModal(true)}
                 className="flex items-center gap-2 bg-brand-gray py-2 px-3 rounded-full text-brand-gray-light hover:text-white hover:bg-brand-gray/80 transition-all border border-brand-primary/30"
-                aria-label="Sair"
+                aria-label="Minha Conta"
               >
                 <img 
                     src={session.user.user_metadata.avatar_url || "https://cdn-icons-png.flaticon.com/512/847/847969.png"} 
                     alt="User" 
                     className="w-6 h-6 rounded-full"
                 />
-                <span className="hidden sm:inline text-sm font-bold">Sair</span>
               </button>
           ) : (
             <button 
@@ -389,7 +389,13 @@ const App: React.FC = () => {
       </main>
       <Footer />
       <UpgradeModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} />
-      <SettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
+      <SettingsModal 
+        isOpen={showSettingsModal} 
+        onClose={() => setShowSettingsModal(false)}
+        session={session}
+        userProfile={userProfile}
+        onLogout={handleLogout}
+      />
     </div>
   );
 };

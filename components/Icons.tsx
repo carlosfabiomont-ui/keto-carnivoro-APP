@@ -85,3 +85,21 @@ export const LockClosedIcon: React.FC<{ className?: string }> = ({ className = "
         <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 00-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
     </svg>
 );
+
+export const ClipboardDocumentIcon: React.FC<{ className?: string }> = ({ className = "w-6 h-6" }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.159.084.326.084.5V11a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 11V4.388c0-.174.03-.341.084-.5M9 4.5h6m-6 9h6m-6 4.5h6m-6-4.5H4.5m1.5-4.5H4.5m1.5-4.5H4.5m9 13.5V11.25A2.25 2.25 0 0011.25 9h-3.75A2.25 2.25 0 005.25 11.25V18" />
+    </svg>
+);
+
+export const ShareIcon: React.FC<{ className?: string }> = ({ className = "w-6 h-6" }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.195.025.39.042.583.05a2.25 2.25 0 012.083 2.186m0 0a2.25 2.25 0 100-2.186m0 2.186c-.195-.025-.39-.042-.583-.05a2.25 2.25 0 00-2.083-2.186M12.75 6.456a2.25 2.25 0 100 2.186m0-2.186c.195.025.39.042.583.05a2.25 2.25 0 012.083 2.186m0 0a2.25 2.25 0 100-2.186m0 2.186c-.195-.025-.39-.042-.583-.05a2.25 2.25 0 00-2.083-2.186m-4.5 6.328a2.25 2.25 0 100 2.186m0-2.186c-.195-.025-.39-.042-.583-.05a2.25 2.25 0 01-2.083-2.186m0 0a2.25 2.25 0 100-2.186m0 2.186c.195.025.39.042.583.05a2.25 2.25 0 002.083-2.186" />
+    </svg>
+);
+
+export const ArrowLeftOnRectangleIcon: React.FC<{ className?: string }> = ({ className = "w-6 h-6" }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+    </svg>
+);

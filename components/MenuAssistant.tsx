@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import type { DietType, StrictnessLevel, ProteinType } from '../types';
 import { generateMenuSuggestion } from '../services/geminiService';
-import { SparklesIcon, LockClosedIcon, CrownIcon } from './Icons';
+import { SparklesIcon, LockClosedIcon, CrownIcon, ClipboardDocumentIcon, ShareIcon, CheckCircleIcon } from './Icons';
 
 interface MenuAssistantProps {
     diet: DietType;
@@ -22,6 +22,7 @@ const MenuAssistant: React.FC<MenuAssistantProps> = ({ diet, strictness, userPro
     const [suggestion, setSuggestion] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [isCopied, setIsCopied] = useState(false);
 
     const isPro = userProfile?.is_pro === true;
 
@@ -52,6 +53,34 @@ const MenuAssistant: React.FC<MenuAssistantProps> = ({ diet, strictness, userPro
             setIsLoading(false);
         }
     }, [selectedProtein, diet, strictness, isPro, onUpgrade]);
+
+    const handleCopyToClipboard = () => {
+        if (!suggestion) return;
+        navigator.clipboard.writeText(suggestion);
+        setIsCopied(true);
+        setTimeout(() => setIsCopied(false), 2500);
+    };
+
+    const handleShare = async () => {
+        if (!suggestion) return;
+        
+        const shareData = {
+            title: 'Sugestão de Cardápio - Keto Carnivora AI',
+            text: suggestion,
+        };
+
+        if (navigator.share) {
+            try {
+                await navigator.share(shareData);
+            } catch (err) {
+                console.error("Erro ao compartilhar:", err);
+            }
+        } else {
+            // Fallback para desktop: copiar para o clipboard
+            handleCopyToClipboard();
+            alert("Sugestão copiada! A função de compartilhar não está disponível no seu navegador.");
+        }
+    };
 
     return (
         <div className="relative w-full bg-brand-gray/50 p-6 rounded-xl border border-brand-gray text-center animate-fade-in">
@@ -115,6 +144,24 @@ const MenuAssistant: React.FC<MenuAssistantProps> = ({ diet, strictness, userPro
                 <div className="mt-6 text-left bg-brand-gray p-4 rounded-lg animate-fade-in">
                     <h3 className="text-lg font-semibold text-white mb-2">Aqui está sua sugestão:</h3>
                     <div className="text-brand-gray-light whitespace-pre-wrap">{suggestion}</div>
+                    <div className="mt-4 pt-4 border-t border-brand-gray-light/10 flex gap-2">
+                        <button
+                            onClick={handleCopyToClipboard}
+                            className={`flex-1 flex items-center justify-center gap-2 text-sm font-semibold py-2 px-3 rounded-lg transition-all duration-300 ${isCopied ? 'bg-status-green text-white' : 'bg-brand-light/10 text-brand-light hover:bg-brand-light/20'}`}
+                        >
+                            {isCopied ? <CheckCircleIcon className="w-4 h-4" /> : <ClipboardDocumentIcon className="w-4 h-4" />}
+                            {isCopied ? 'Copiado!' : 'Salvar'}
+                        </button>
+                        {navigator.share && (
+                           <button
+                                onClick={handleShare}
+                                className="flex-1 flex items-center justify-center gap-2 text-sm font-semibold py-2 px-3 rounded-lg bg-brand-light/10 text-brand-light hover:bg-brand-light/20"
+                           >
+                               <ShareIcon className="w-4 h-4" />
+                               Compartilhar
+                           </button>
+                        )}
+                    </div>
                 </div>
             )}
         </div>

@@ -1,4 +1,5 @@
 
+
 import { GoogleGenAI, Type } from '@google/genai';
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from '../lib/supabaseClient';
 import type { DietType, StrictnessLevel, AnalysisResult, ProteinType } from '../types';
@@ -154,7 +155,6 @@ function generateMenuPrompt(protein: ProteinType, diet: DietType, strictness: St
     `;
 }
 
-// Helper: Converte Arquivo para Base64 (Sem resize - Plano B)
 const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -167,7 +167,6 @@ const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
-// Nova função ROBUSTA para redimensionar e comprimir imagem (Mobile-First)
 const resizeAndCompressImage = (file: File, maxWidth = 350, quality = 0.5): Promise<string> => {
     return new Promise((resolve, reject) => {
         const objectUrl = URL.createObjectURL(file);
@@ -177,28 +176,22 @@ const resizeAndCompressImage = (file: File, maxWidth = 350, quality = 0.5): Prom
 
         img.onload = () => {
             URL.revokeObjectURL(objectUrl);
-
             try {
                 const canvas = document.createElement('canvas');
                 let width = img.width;
                 let height = img.height;
-
-                // Redimensiona mantendo proporção
                 if (width > maxWidth) {
                     height = (maxWidth / width) * height;
                     width = maxWidth;
                 }
-
                 canvas.width = width;
                 canvas.height = height;
-                
                 const ctx = canvas.getContext('2d');
                 if (ctx) {
                     ctx.fillStyle = '#FFFFFF';
                     ctx.fillRect(0, 0, width, height);
                     ctx.drawImage(img, 0, 0, width, height);
-                    const dataUrl = canvas.toDataURL('image/jpeg', quality);
-                    resolve(dataUrl.split(',')[1]);
+                    resolve(canvas.toDataURL('image/jpeg', quality).split(',')[1]);
                 } else {
                     reject(new Error("Falha ao inicializar processador de imagem."));
                 }
@@ -206,7 +199,6 @@ const resizeAndCompressImage = (file: File, maxWidth = 350, quality = 0.5): Prom
                 reject(new Error("Erro ao processar imagem no canvas."));
             }
         };
-
         img.onerror = () => {
             URL.revokeObjectURL(objectUrl);
             reject(new Error("O navegador não conseguiu ler esta imagem. O arquivo pode estar corrompido."));
@@ -221,9 +213,7 @@ export async function analyzeMeal(
 ): Promise<AnalysisResult> {
   try {
     let imageBase64: string;
-
     try {
-        // Tenta o método otimizado (resize super comprimido)
         imageBase64 = await resizeAndCompressImage(imageFile);
     } catch (resizeError) {
         const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
@@ -234,44 +224,25 @@ export async function analyzeMeal(
         }
     }
     
-    // 1. TENTATIVA COM CHAVE LOCAL (DEV ONLY)
     const localKey = getStoredApiKey();
 
     if (localKey) {
         const genAI = getGoogleGenAI(localKey);
         const prompt = generatePrompt(diet, strictness);
-        
-        const imagePart = {
-            inlineData: {
-                mimeType: "image/jpeg",
-                data: imageBase64,
-            },
-        };
-        const textPart = { text: prompt };
-
         const response = await genAI.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: { parts: [textPart, imagePart] },
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: responseSchema,
-            },
+            contents: { parts: [{ text: prompt }, { inlineData: { mimeType: "image/jpeg", data: imageBase64 } }] },
+            config: { responseMimeType: "application/json", responseSchema: responseSchema },
         });
-
         const resultText = response.text;
         if (!resultText) throw new Error("A API não retornou uma resposta válida.");
         return JSON.parse(resultText) as AnalysisResult;
     }
 
-    // 2. TENTATIVA VIA SUPABASE EDGE FUNCTION (Modo SaaS) - RAW FETCH
     if (supabase) {
         const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!session) {
-             throw new Error("Sessão expirada. Faça login novamente.");
-        }
+        if (!session) throw new Error("Sessão expirada. Faça login novamente.");
 
-        // URL da Edge Function
         const functionUrl = `${SUPABASE_URL}/functions/v1/fun--es-subase-nova-an-lise-refei--o`;
         
         const response = await fetch(functionUrl, {
@@ -282,66 +253,36 @@ export async function analyzeMeal(
                 'Authorization': `Bearer ${session.access_token}`,
                 'apikey': SUPABASE_ANON_KEY
             },
-            body: JSON.stringify({ 
-                action: 'analyze_meal', // Identificador da ação
-                image: imageBase64, 
-                diet, 
-                strictness 
-            })
+            body: JSON.stringify({ action: 'analyze_meal', image: imageBase64, diet, strictness })
         });
 
         if (!response.ok) {
-            const responseText = await response.text();
-            
-            if (responseText.includes("API_KEY_INVALID") || responseText.includes("API key not valid")) {
-                throw new Error("Erro de Configuração no Servidor: A chave API do Google (GEMINI_API_KEY) nos Secrets do Supabase é inválida, tem restrições de IP incorretas ou expirou. Gere uma nova chave sem restrições no Google AI Studio e atualize no Supabase.");
-            }
-
-            if (response.status === 404) {
-                 throw new Error("Erro 404: A Função não foi encontrada. Verifique se o nome da função está correto.");
-            }
-             if (response.status === 401) {
-                 throw new Error("Não autorizado (401). Tente sair e entrar novamente.");
-            }
-
-            throw new Error(`Erro do Servidor (${response.status}): ${responseText}`);
+             const errorBody = await response.text();
+             console.error("Server Error Body:", errorBody); // Log para depuração
+             // Erro amigável para o cliente final
+             throw new Error("Nosso serviço de análise está temporariamente indisponível. Por favor, tente novamente mais tarde.");
         }
 
         const responseText = await response.text();
-
         try {
             return JSON.parse(responseText) as AnalysisResult;
         } catch (e) {
-            throw new Error("O servidor respondeu, mas não foi um JSON válido.");
+            throw new Error("O servidor respondeu com um formato inesperado. Nossa equipe já foi notificada.");
         }
     }
 
     throw new Error("API_KEY_MISSING");
 
   } catch (error) {
-    if (error instanceof Error && error.message.includes("API_KEY_MISSING")) {
-        throw new Error("API_KEY_MISSING");
-    }
-
-    let finalErrorMessage = "Ocorreu um erro desconhecido.";
-
+    // Retorna a mensagem de erro já tratada ou uma genérica
     if (error instanceof Error) {
-        if (error.message.includes("Failed to fetch")) {
-            finalErrorMessage = "Erro de Conexão (CORS/Rede). O servidor recusou a conexão. Isso acontece se a função não tiver o código de CORS correto.";
-        } else {
-            finalErrorMessage = error.message;
+        if (error.message === "API_KEY_MISSING") {
+            return Promise.reject(error); // Repassa o erro para o App tratar
         }
-    } else if (typeof error === 'string') {
-        finalErrorMessage = error;
-    } else if (typeof error === 'object' && error !== null) {
-        try {
-            finalErrorMessage = JSON.stringify(error);
-        } catch {
-            finalErrorMessage = "Erro de sistema não identificado.";
-        }
+        throw error; // Lança o erro já formatado (seja de login, servidor, etc)
     }
-
-    throw new Error(finalErrorMessage);
+    // Fallback para erros não-padrão
+    throw new Error("Ocorreu um erro inesperado durante a análise.");
   }
 }
 
@@ -351,23 +292,18 @@ export async function generateMenuSuggestion(
     strictness: StrictnessLevel
 ): Promise<string> {
     try {
-        // 1. CHAVE LOCAL (DEV)
         const localKey = getStoredApiKey();
 
         if (localKey) {
             const genAI = getGoogleGenAI(localKey);
             const prompt = generateMenuPrompt(protein, diet, strictness);
-            const response = await genAI.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: prompt,
-            });
+            const response = await genAI.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
             return response.text || "Sem resposta.";
         }
 
-        // 2. SUPABASE (PRODUÇÃO)
         if (supabase) {
             const { data: { session } } = await supabase.auth.getSession();
-            if (!session) throw new Error("Faça login para gerar cardápios.");
+            if (!session) throw new Error("Faça login para usar o Assistente de Cardápio.");
 
             const functionUrl = `${SUPABASE_URL}/functions/v1/fun--es-subase-nova-an-lise-refei--o`;
             
@@ -379,28 +315,20 @@ export async function generateMenuSuggestion(
                     'Authorization': `Bearer ${session.access_token}`,
                     'apikey': SUPABASE_ANON_KEY
                 },
-                body: JSON.stringify({ 
-                    action: 'generate_menu', // Identificador da ação
-                    protein, 
-                    diet, 
-                    strictness 
-                })
+                body: JSON.stringify({ action: 'generate_menu', protein, diet, strictness })
             });
 
             if (!response.ok) {
-                 const txt = await response.text();
-                 // Detecção se o erro é porque o código do servidor ainda é o antigo (que espera imagem)
-                 if (txt.includes("image") || response.status === 400) {
-                     throw new Error("O código do servidor ainda não foi atualizado para suportar Cardápios. Por favor, atualize o código no Supabase.");
-                 }
-                 throw new Error(`Erro no servidor: ${txt}`);
+                 const errText = await response.text();
+                 console.error("Menu Server Error:", errText);
+                 throw new Error("O Assistente de Cardápio está indisponível no momento. Tente mais tarde.");
             }
 
             const data = await response.json();
-            return data.result || "Sem sugestão disponível.";
+            return data.result || "Não foi possível gerar uma sugestão no momento.";
         }
 
-        return "Erro: Sistema indisponível.";
+        throw new Error("Sistema indisponível.");
 
     } catch (error) {
          if (error instanceof Error) {
